@@ -230,7 +230,7 @@ int shell_exec(char** parsed_command, char* type) {
 
         int i = 0;
         while(command_vec[i] != NULL) {
-            
+
             if(pipe(pfd) == -1) {
                 fprintf(stderr,"pshell : ERR %d: Error in Pipe\n", errno);
             }
@@ -306,9 +306,6 @@ int shell_exec(char** parsed_command, char* type) {
                     break;
             }
             
-            if(wait(NULL) == -1) {
-                printf("pshell : ERR %d : waiting for child Main\n", errno);
-            }
             if(close(pfd[1]) == -1) {
                 printf("pshell : ERR %d: Error in pfd closing write end in %s prgm\n", errno, command_vec[i]);
                 exit(EXIT_FAILURE);
@@ -317,7 +314,11 @@ int shell_exec(char** parsed_command, char* type) {
             free(command_args);
             i++;
         }
-    
+        while(num_args_type_sp-- > 0) {
+            if(wait(NULL) == -1) {
+                printf("pshell : ERR %d : waiting for child Main\n", errno);
+            }
+        }
     }
     else if(strcmp(type, "DP") == 0) {
     
