@@ -27,7 +27,7 @@ void main_loop();
 char* read_command();
 char** parse_command(char*);
 int shell_exec(char**, char*);
-void print(char**, int);
+void debug(char**, int);
 void string_tokenizer(char*, char**, char*, int*);
 char* trimwhitespace(char*);
 
@@ -75,6 +75,10 @@ char* read_command() {
 }
 
 char* trimwhitespace(char *str) {
+    if(str == NULL) {
+        return str;
+    }
+
     char* end;
     while(isspace((unsigned char)*str)) str++;
 
@@ -122,11 +126,13 @@ char** parse_command(char* command) {
 void string_tokenizer(char* command, char** parsed_command, char* delim, int* num_args) {
     int i = 0;
     char* token = strtok(command, delim);
+    token = trimwhitespace(token);
     while(token != NULL) {
         parsed_command[i] = (char*) calloc(strlen(token), sizeof(char));
         parsed_command[i] = token;
         i++;
         token = strtok(NULL, delim);
+        token = trimwhitespace(token);
     }
     *num_args = i;
 }
@@ -205,7 +211,113 @@ int shell_exec(char** parsed_command, char* type) {
         free(path);
     }
     else if(strcmp(type, "SP") == 0) {
+        int num_pipes = num_args_type_sp - 1;
 
+        char* command_vec[num_args_type_sp+1];
+        if(num_args_type_sp == 1) {
+            command_vec[0] = parsed_command[0];
+            command_vec[1] = NULL;
+        }
+        else {
+            for(int j = 0; j < num_args_type_sp+1; j++) {
+                command_vec[j] = parsed_command[j];
+            }
+            command_vec[num_args_type_sp] = NULL;
+        }
+        
+        int pfd[2];
+        int fdd = 0;
+
+        int i = 0;
+        while(command_vec[i] != NULL) {
+            
+            if(pipe(pfd) == -1) {
+                fprintf(stderr,"pshell : ERR %d: Error in Pipe\n", errno);
+            }
+
+            char** command_args = NULL;
+            switch(fork()) {
+                case -1:
+                    fprintf(stderr,"pshell : ERR %d : Error in fork NP\n", errno);
+                case 0: {
+                    if(i != 0) {
+                        if(fdd != STDIN_FILENO) {
+                            if(dup2(fdd, STDIN_FILENO) == -1) {
+                                fprintf(stderr,"pshell : ERR %d: Error in pfd dup read end in %s prgm\n", errno, command_vec[i]);
+                                exit(EXIT_FAILURE);
+                            }
+                            if(close(fdd) == -1) {
+                                fprintf(stderr,"pshell : ERR %d: Error in pfd closing 1 read end in %s prgm\n", errno, command_vec[i]);
+                                exit(EXIT_FAILURE);
+                            }
+                        }
+                    }
+                    
+                    if(command_vec[i+1] != NULL) {
+                        if(pfd[1] != STDOUT_FILENO) {
+                            if(dup2(pfd[1], STDOUT_FILENO) == -1) {
+                                fprintf(stderr,"pshell : ERR %d: Error in pfd dup write end in %s prgm\n", errno, command_vec[i]);
+                                exit(EXIT_FAILURE);
+                            }
+                            if(close(pfd[1]) == -1) {
+                                fprintf(stderr,"pshell : ERR %d: Error in pfd closing 1 write end in %s prgm\n", errno, command_vec[i]);
+                                exit(EXIT_FAILURE);
+                            }
+                        }
+                    }
+                    
+                    if(i == 0) {
+                        if(close(pfd[0]) == -1) {
+                            fprintf(stderr,"pshell : ERR %d: Error in pfd closing 2 read end in %s prgm\n", errno, command_vec[i]);
+                            exit(EXIT_FAILURE);
+                        }
+                    }
+                    
+                    if(command_vec[i+1] == NULL) {
+                        if(close(pfd[1]) == -1) {
+                            fprintf(stderr,"pshell : ERR %d: Error in pfd closing 2 write end in %s prgm\n", errno, command_vec[i]);
+                            exit(EXIT_FAILURE);
+                        }
+                    }
+
+                    char* command = command_vec[i];
+                    int num_command_args;
+                    command_args = (char**) calloc(MAX_ARGS+1, sizeof(char *));
+                    string_tokenizer(command_vec[i], command_args, " ", &num_command_args);
+                
+                    char* args_vec[num_command_args+1];
+                    if(num_command_args == 1) {
+                        args_vec[0] = command_args[0];
+                        args_vec[1] = NULL;
+                    }
+                    else {
+                        for(int j = 0; j < num_command_args+1; j++) {
+                            args_vec[j] = command_args[j];
+                        }
+                        args_vec[num_command_args] = NULL;
+                    }
+                    // fprintf(stderr,"Executing %s\n", command_vec[i]);
+                    execvp(command_args[0], args_vec);
+                    fprintf(stderr,"pshell : ERR %d : error in exec in %s program\n", errno, command_vec[i]);
+                    exit(EXIT_FAILURE);
+
+                }
+                default:
+                    break;
+            }
+            
+            if(wait(NULL) == -1) {
+                printf("pshell : ERR %d : waiting for child Main\n", errno);
+            }
+            if(close(pfd[1]) == -1) {
+                printf("pshell : ERR %d: Error in pfd closing write end in %s prgm\n", errno, command_vec[i]);
+                exit(EXIT_FAILURE);
+            }
+            fdd = pfd[0];
+            free(command_args);
+            i++;
+        }
+    
     }
     else if(strcmp(type, "DP") == 0) {
     
