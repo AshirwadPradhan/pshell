@@ -30,8 +30,47 @@ int shell_exec(char**, char*);
 void debug(char**, int);
 void string_tokenizer(char*, char**, char*, int*);
 char* trimwhitespace(char*);
+void signal_handler(int);
+
+void signal_handler(int sig) {
+    if(sig == SIGINT) {
+        char ch;
+        printf("\nDo you really want to exit ? Y or N. \n");
+        scanf("%c", &ch);
+        if(ch == 'Y' || ch == 'y') {
+            exit(EXIT_SUCCESS);
+        }
+        else {
+            printf("\n");
+            return;
+        }
+    }
+
+    if(sig == SIGQUIT) {
+        char ch;
+        printf("\nDo you really want to exit ? Y or N. \n");
+        scanf("%c", &ch);
+        if(ch == 'Y' || ch == 'y') {
+            exit(EXIT_SUCCESS);
+        }
+        else {
+            printf("\n");
+            return;
+        }
+    }
+}
 
 int main(int argc, char **argv) {
+    signal(SIGINT, signal_handler);
+    signal(SIGQUIT, signal_handler);
+    signal(SIGCHLD, SIG_DFL);
+
+    for (int sig = 1; sig < NSIG; sig++) {
+        if (sig != SIGINT && sig != SIGQUIT && sig != SIGCHLD) {
+            signal(sig, SIG_IGN);
+        }
+    }
+
     main_loop();
     return EXIT_SUCCESS;
 }
@@ -42,7 +81,7 @@ void main_loop() {
     int status = 1;
     PATH = getenv("PATH");
     while(status) {
-        printf("pshell > ");
+        printf("\npshell > ");
         fflush(stdout);
         command = read_command();
         if(strlen(command) == 0) {
@@ -230,22 +269,25 @@ int shell_exec(char** parsed_command, char* type) {
 
         int i = 0;
         while(command_vec[i] != NULL) {
-
+            fprintf(stderr, "Starting %s\n", command_vec[i]);
             if(pipe(pfd) == -1) {
                 fprintf(stderr,"pshell : ERR %d: Error in Pipe\n", errno);
             }
-
+            fprintf(stderr, "Pipe Created\n");
             char** command_args = NULL;
+            
             switch(fork()) {
                 case -1:
                     fprintf(stderr,"pshell : ERR %d : Error in fork NP\n", errno);
                 case 0: {
+                    fprintf(stderr, "PID of %s : %d\n", command_vec[i], getpid());
                     if(i != 0) {
                         if(fdd != STDIN_FILENO) {
                             if(dup2(fdd, STDIN_FILENO) == -1) {
                                 fprintf(stderr,"pshell : ERR %d: Error in pfd dup read end in %s prgm\n", errno, command_vec[i]);
                                 exit(EXIT_FAILURE);
                             }
+                            fprintf(stderr, "Connected STDIN to pipe %s\n", command_vec[i]);
                             if(close(fdd) == -1) {
                                 fprintf(stderr,"pshell : ERR %d: Error in pfd closing 1 read end in %s prgm\n", errno, command_vec[i]);
                                 exit(EXIT_FAILURE);
@@ -259,6 +301,7 @@ int shell_exec(char** parsed_command, char* type) {
                                 fprintf(stderr,"pshell : ERR %d: Error in pfd dup write end in %s prgm\n", errno, command_vec[i]);
                                 exit(EXIT_FAILURE);
                             }
+                            fprintf(stderr, "Connected STDOUT to pipe %s\n", command_vec[i]);
                             if(close(pfd[1]) == -1) {
                                 fprintf(stderr,"pshell : ERR %d: Error in pfd closing 1 write end in %s prgm\n", errno, command_vec[i]);
                                 exit(EXIT_FAILURE);
@@ -296,16 +339,15 @@ int shell_exec(char** parsed_command, char* type) {
                         }
                         args_vec[num_command_args] = NULL;
                     }
-                    // fprintf(stderr,"Executing %s\n", command_vec[i]);
+                    fprintf(stderr,"Executing %s\n", command);
                     execvp(command_args[0], args_vec);
-                    fprintf(stderr,"pshell : ERR %d : error in exec in %s program\n", errno, command_vec[i]);
+                    fprintf(stderr,"pshell : ERR %d : error in exec in %s program\n", errno, command);
                     exit(EXIT_FAILURE);
 
                 }
                 default:
                     break;
             }
-            
             if(close(pfd[1]) == -1) {
                 printf("pshell : ERR %d: Error in pfd closing write end in %s prgm\n", errno, command_vec[i]);
                 exit(EXIT_FAILURE);
@@ -314,11 +356,13 @@ int shell_exec(char** parsed_command, char* type) {
             free(command_args);
             i++;
         }
+        fprintf(stderr, "Waiting for all children to finish\n");
         while(num_args_type_sp-- > 0) {
             if(wait(NULL) == -1) {
                 printf("pshell : ERR %d : waiting for child Main\n", errno);
             }
         }
+        fprintf(stderr, "Command Run Successful\n");
     }
     else if(strcmp(type, "DP") == 0) {
     
