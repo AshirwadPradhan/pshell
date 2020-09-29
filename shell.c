@@ -211,7 +211,7 @@ int shell_exec(char** parsed_command, char* type) {
     
         char* left_pipe = parsed_command[0];
         char* right_pipe = parsed_command[1];
-        char** parsed_right_pipe;
+        char** parsed_right_pipe = NULL;
         int num;
         parsed_right_pipe = (char**) calloc(MAX_ARGS+1, sizeof(char *));
         string_tokenizer(right_pipe, parsed_right_pipe, ",", &num);
@@ -223,6 +223,7 @@ int shell_exec(char** parsed_command, char* type) {
             return 1;
         }
 
+        char** first_prog_args = NULL;
         switch(fork()) {
             case -1:
                 printf("pshell : ERR %d : Error in fork first prgm\n", errno);
@@ -241,7 +242,6 @@ int shell_exec(char** parsed_command, char* type) {
                     }
                 }
 
-                char** first_prog_args;
                 int num_first_args_right;
                 first_prog_args = (char**) calloc(MAX_ARGS+1, sizeof(char *));
                 string_tokenizer(first_program, first_prog_args, " ", &num_first_args_right);
@@ -265,12 +265,14 @@ int shell_exec(char** parsed_command, char* type) {
             default:
                 break;
         }
+        free(first_prog_args);
 
         int f_pfd[2];
         if(pipe(f_pfd) == -1) {
             printf("pshell : ERR %d: Error in Pipe\n", errno);
         }
         
+        char** left_pipe_args = NULL;
         switch(fork()) {
             case -1:
                 printf("pshell : ERR %d : Error in Fork for DP Command type\n", errno);
@@ -291,7 +293,6 @@ int shell_exec(char** parsed_command, char* type) {
                     }
                 }
                 
-                char** left_pipe_args;
                 int num_args_left;
                 left_pipe_args = (char**) calloc(MAX_ARGS+1, sizeof(char *));
                 string_tokenizer(left_pipe, left_pipe_args, " ", &num_args_left);
@@ -316,6 +317,7 @@ int shell_exec(char** parsed_command, char* type) {
             default:
                 break;
         }
+        free(left_pipe_args);
 
         int s_pfd[2];
         if(pipe(s_pfd) == -1) {
@@ -382,6 +384,7 @@ int shell_exec(char** parsed_command, char* type) {
             printf("pshell : ERR %d : waiting for child Main\n", errno);
         }
         
+        char** second_prog_args = NULL;
         switch(fork()) {
             case -1:
                 printf("pshell : ERR %d : Error in fork second prgm\n", errno);
@@ -401,7 +404,7 @@ int shell_exec(char** parsed_command, char* type) {
                         exit(EXIT_FAILURE);
                     }
                 }
-                char** second_prog_args;
+                
                 int num_second_args_right;
                 second_prog_args = (char**) calloc(MAX_ARGS+1, sizeof(char *));
                 string_tokenizer(second_program, second_prog_args, " ", &num_second_args_right);
@@ -425,7 +428,8 @@ int shell_exec(char** parsed_command, char* type) {
             default:
                 break;
         }
-        
+        free(second_prog_args);
+
         if(close(s_pfd[0]) == -1) {
             printf("pshell : ERR %d : error closing read end of second pipe Main\n", errno);
         }
@@ -449,12 +453,12 @@ int shell_exec(char** parsed_command, char* type) {
         if(wait(NULL) == -1) {
             printf("pshell : ERR %d : waiting for child Main\n", errno);
         }
-
+        free(parsed_right_pipe);
     }
     else if(strcmp(type, "TP") == 0) {
         char* left_pipe = parsed_command[0];
         char* right_pipe = parsed_command[1];
-        char** parsed_right_pipe;
+        char** parsed_right_pipe = NULL;
         int num;
         parsed_right_pipe = (char**) calloc(MAX_ARGS+1, sizeof(char *));
         string_tokenizer(right_pipe, parsed_right_pipe, ",", &num);
@@ -471,6 +475,7 @@ int shell_exec(char** parsed_command, char* type) {
             return 1;
         }
 
+        char** first_prog_args = NULL;
         switch(fork()) {
             case -1:
                 printf("pshell : ERR %d: Error in fork first prgm\n", errno);
@@ -489,7 +494,6 @@ int shell_exec(char** parsed_command, char* type) {
                     }
                 }
 
-                char** first_prog_args;
                 int num_first_args_right;
                 first_prog_args = (char**) calloc(MAX_ARGS+1, sizeof(char *));
                 string_tokenizer(first_program, first_prog_args, " ", &num_first_args_right);
@@ -513,7 +517,9 @@ int shell_exec(char** parsed_command, char* type) {
             default:
                 break;
         }
+        free(first_prog_args);
 
+        char** second_prog_args = NULL;
         switch(fork()) {
             case -1:
                 printf("pshell : ERR %d: Error in fork second prgm\n", errno);
@@ -532,7 +538,6 @@ int shell_exec(char** parsed_command, char* type) {
                     }
                 }
 
-                char** second_prog_args;
                 int num_second_args_right;
                 second_prog_args = (char**) calloc(MAX_ARGS+1, sizeof(char *));
                 string_tokenizer(second_program, second_prog_args, " ", &num_second_args_right);
@@ -556,12 +561,14 @@ int shell_exec(char** parsed_command, char* type) {
             default:
                 break;
         }
+        free(second_prog_args);
 
         int f_pfd[2];
         if(pipe(f_pfd) == -1) {
             printf("pshell : ERR %d: Error in Pipe\n", errno);
         }
         
+        char** left_pipe_args = NULL;
         switch(fork()) {
             case -1:
                 printf("pshell : ERR %d: Error in Fork for DP Command type\n", errno);
@@ -582,7 +589,6 @@ int shell_exec(char** parsed_command, char* type) {
                     }
                 }
                 
-                char** left_pipe_args;
                 int num_args_left;
                 left_pipe_args = (char**) calloc(MAX_ARGS+1, sizeof(char *));
                 string_tokenizer(left_pipe, left_pipe_args, " ", &num_args_left);
@@ -607,6 +613,7 @@ int shell_exec(char** parsed_command, char* type) {
             default:
                 break;
         }
+        free(left_pipe_args);
 
         int s_pfd[2];
         if(pipe(s_pfd) == -1) {
@@ -676,6 +683,7 @@ int shell_exec(char** parsed_command, char* type) {
             printf("pshell : ERR %d : waiting for child Main\n", errno);
         }
         
+        char** third_prog_args = NULL;
         switch(fork()) {
             case -1:
                 printf("pshell : ERR %d : Error in fork third prgm\n", errno);
@@ -695,7 +703,6 @@ int shell_exec(char** parsed_command, char* type) {
                         exit(EXIT_FAILURE);
                     }
                 }
-                char** third_prog_args;
                 int num_third_args_right;
                 third_prog_args = (char**) calloc(MAX_ARGS+1, sizeof(char *));
                 string_tokenizer(third_program, third_prog_args, " ", &num_third_args_right);
@@ -719,6 +726,7 @@ int shell_exec(char** parsed_command, char* type) {
             default:
                 break;
         }
+        free(third_prog_args);
         
         if(close(s_pfd[0]) == -1) {
             printf("pshell : ERR %d: error closing read end of second pipe Main\n", errno);
@@ -757,7 +765,7 @@ int shell_exec(char** parsed_command, char* type) {
         if(wait(NULL) == -1) {
             printf("pshell : ERR %d: waiting for child Main\n", errno);
         }
-
+        free(parsed_right_pipe);
     }
     else {
         printf("pshell : ERR %d: Command not recognized\n", errno);
@@ -766,7 +774,7 @@ int shell_exec(char** parsed_command, char* type) {
     return 1;
 }
 
-void print(char** parse_command, int num) {
+void debug(char** parse_command, int num) {
    for(int i = 0; i < num; i++) {
        printf("%s\n", *(&parse_command[i]));
    }
