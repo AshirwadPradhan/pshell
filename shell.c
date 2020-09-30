@@ -21,6 +21,8 @@ struct History {
     int size;
     int head;
     char** hist_elements;
+    int* status;
+    int* err;
 };
 
 static int num_args_type_np = 0;
@@ -41,21 +43,26 @@ void string_tokenizer(char*, char**, char*, int*);
 char* trimwhitespace(char*);
 void signal_handler(int);
 void init_hist(int);
-void add_hist(char*);
+void add_hist(char*, int, int);
 void print_hist();
+extern int isspace(int);
 
 void init_hist(int size) {
     history = (struct History*) malloc(1*sizeof(struct History));
     history->size = size;
     history->hist_elements =(char**) calloc(size, sizeof(char*));
+    history->status = (int*) calloc(size, sizeof(int));
+    history->err = (int*) calloc(size, sizeof(int));
 }
 
-void add_hist(char* input) {
+void add_hist(char* input, int status, int e) {
   if (history->hist_elements[history->head] != NULL) {
     free(history->hist_elements[history->head]);
   }
   history->hist_elements[history->head] = (char*) calloc(MAX_LINE_SIZE, sizeof(char));
   strcpy(history->hist_elements[history->head], input);
+  history->status[history->head] = status;
+  history->err[history->head] = e;
   history->head = (history->head + 1) % history->size;
 }
 
@@ -63,7 +70,7 @@ void print_hist() {
   int start = history->head;
   for (int i = 0; i < history->size; i++) {
     if (history->hist_elements[start] != NULL) {
-      printf("%s\n", history->hist_elements[start]);
+      printf("%s\t\t\t : Status %d\t\t\t : Errno %d\n", history->hist_elements[start], history->status[start], history->err[start]);
     }
     start++;
     if (start >= history->size) {
@@ -74,13 +81,13 @@ void print_hist() {
 
 void signal_handler(int sig) {
     if(sig == SIGINT) {
-        printf("Printing last 10 commands: \n");
+        printf("\n[+] Printing last 10 commands: \n");
         print_hist();
     }
 
     if(sig == SIGQUIT) {
         char ch;
-        printf("\nDo you really want to exit ? Y or N. \n");
+        printf("\n[?] Do you really want to exit ? Y or N. \n");
         scanf("%c", &ch);
         if(ch == 'Y' || ch == 'y') {
             exit(EXIT_SUCCESS);
@@ -103,6 +110,7 @@ int main(int argc, char **argv) {
         }
     }
     init_hist(MAX_HIST_SIZE);
+    printf("\n[+] PID pshell : %d\n", getpid());
     main_loop();
     free(history);
     return EXIT_SUCCESS;
@@ -113,16 +121,21 @@ void main_loop() {
     char** parsed_commands;
     int status = 1;
     PATH = getenv("PATH");
-    while(status) {
+
+    while(1) {
         printf("\npshell > ");
         fflush(stdout);
         command = read_command();
         if(strlen(command) == 0) {
             continue;
         }
-        add_hist(command);
+        char* bk_command = (char*) calloc(strlen(command), sizeof(char));
+        strcpy(bk_command, command);
         parsed_commands = parse_command(command);
         status = shell_exec(parsed_commands, command_type);
+        add_hist(bk_command, status, errno);
+        errno = 0;
+        free(bk_command);
     }
 
     free(command);
@@ -155,8 +168,9 @@ char* trimwhitespace(char *str) {
     char* end;
     while(isspace((unsigned char)*str)) str++;
 
-    if(*str == 0)
+    if(*str == 0) {
         return str;
+    }
 
     end = str + strlen(str) - 1;
     while(end > str && isspace((unsigned char)*end)) end--;
@@ -164,7 +178,6 @@ char* trimwhitespace(char *str) {
 
     return str;
 }
-
 
 char** parse_command(char* command) {
     char** parsed_command;
@@ -231,7 +244,7 @@ int shell_exec(char** parsed_command, char* type) {
         i = 0;
         
         while(path_list[i] != NULL) {
-            printf("************************************************************\n");
+            // printf("************************************************************\n");
             char* main_comm = parsed_command[0];
             char* buff = (char*) calloc(MAX_TOKEN_SIZE, sizeof(char));
             strcpy(buff, path_list[i]);
@@ -243,10 +256,10 @@ int shell_exec(char** parsed_command, char* type) {
 
                 if((childpid = fork()) == -1) {
                 printf("pshell : ERR %d : Command Type NP Cannot fork\n", errno);
-                exit(1);
+                return -1;
                 }
                 else if(childpid == 0) {
-                    printf("Executing %s\n", buff);
+                    printf("[+] Executing %s\n", buff);
                     
                     char* args_vec[num_args_type_np+1];
                     if(num_args_type_np == 1) {
@@ -266,15 +279,16 @@ int shell_exec(char** parsed_command, char* type) {
                 }
                 else {
                     while(wait(&status) != childpid);
+                    printf("\n");
                     printf("Command Successful : PID %d\n", childpid);
                     printf("Status: %d\n", status);
                 }
             }
             else {
                 if (errno == ENOENT) 
-                    printf ("%s does not exist\n", buff);
+                    printf ("[-] %s does not exist\n", buff);
                 else if (errno == EACCES) 
-                    printf ("%s is not accessible\n", buff);
+                    printf ("[-] %s is not accessible\n", buff);
             }
             parsed_command[0] = main_comm;
             free(buff);
@@ -303,28 +317,29 @@ int shell_exec(char** parsed_command, char* type) {
 
         int i = 0;
         while(command_vec[i] != NULL) {
-            fprintf(stderr, "Starting %s\n", command_vec[i]);
+            fprintf(stderr, "[+] Starting %s\n", command_vec[i]);
             if(pipe(pfd) == -1) {
                 fprintf(stderr,"pshell : ERR %d: Error in Pipe\n", errno);
+                return -1;
             }
-            fprintf(stderr, "Pipe Created\n");
+            fprintf(stderr, "[+] Pipe Created\n");
             char** command_args = NULL;
             
             switch(fork()) {
                 case -1:
                     fprintf(stderr,"pshell : ERR %d : Error in fork NP\n", errno);
                 case 0: {
-                    fprintf(stderr, "PID of %s : %d\n", command_vec[i], getpid());
+                    fprintf(stderr, "[+] PID of %s : %d\n", command_vec[i], getpid());
                     if(i != 0) {
                         if(fdd != STDIN_FILENO) {
                             if(dup2(fdd, STDIN_FILENO) == -1) {
                                 fprintf(stderr,"pshell : ERR %d: Error in pfd dup read end in %s prgm\n", errno, command_vec[i]);
-                                exit(EXIT_FAILURE);
+                                return -1;
                             }
-                            fprintf(stderr, "Connected STDIN to pipe %s\n", command_vec[i]);
+                            fprintf(stderr, "[+] Connected STDIN to pipe %s\n", command_vec[i]);
                             if(close(fdd) == -1) {
                                 fprintf(stderr,"pshell : ERR %d: Error in pfd closing 1 read end in %s prgm\n", errno, command_vec[i]);
-                                exit(EXIT_FAILURE);
+                                return -1;
                             }
                         }
                     }
@@ -333,12 +348,12 @@ int shell_exec(char** parsed_command, char* type) {
                         if(pfd[1] != STDOUT_FILENO) {
                             if(dup2(pfd[1], STDOUT_FILENO) == -1) {
                                 fprintf(stderr,"pshell : ERR %d: Error in pfd dup write end in %s prgm\n", errno, command_vec[i]);
-                                exit(EXIT_FAILURE);
+                                return -1;
                             }
-                            fprintf(stderr, "Connected STDOUT to pipe %s\n", command_vec[i]);
+                            fprintf(stderr, "[+] Connected STDOUT to pipe %s\n", command_vec[i]);
                             if(close(pfd[1]) == -1) {
                                 fprintf(stderr,"pshell : ERR %d: Error in pfd closing 1 write end in %s prgm\n", errno, command_vec[i]);
-                                exit(EXIT_FAILURE);
+                                return -1;
                             }
                         }
                     }
@@ -346,14 +361,14 @@ int shell_exec(char** parsed_command, char* type) {
                     if(i == 0) {
                         if(close(pfd[0]) == -1) {
                             fprintf(stderr,"pshell : ERR %d: Error in pfd closing 2 read end in %s prgm\n", errno, command_vec[i]);
-                            exit(EXIT_FAILURE);
+                            return -1;
                         }
                     }
                     
                     if(command_vec[i+1] == NULL) {
                         if(close(pfd[1]) == -1) {
                             fprintf(stderr,"pshell : ERR %d: Error in pfd closing 2 write end in %s prgm\n", errno, command_vec[i]);
-                            exit(EXIT_FAILURE);
+                            return -1;
                         }
                     }
 
@@ -373,30 +388,30 @@ int shell_exec(char** parsed_command, char* type) {
                         }
                         args_vec[num_command_args] = NULL;
                     }
-                    fprintf(stderr,"Executing %s\n", command);
+                    fprintf(stderr,"[+] Executing %s\n", command);
                     execvp(command_args[0], args_vec);
                     fprintf(stderr,"pshell : ERR %d : error in exec in %s program\n", errno, command);
-                    exit(EXIT_FAILURE);
-
+                    return -1;
                 }
                 default:
                     break;
             }
             if(close(pfd[1]) == -1) {
                 printf("pshell : ERR %d: Error in pfd closing write end in %s prgm\n", errno, command_vec[i]);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             fdd = pfd[0];
             free(command_args);
             i++;
         }
-        fprintf(stderr, "Waiting for all children to finish\n");
+        fprintf(stderr, "[+] Waiting for all children to finish\n");
         while(num_args_type_sp-- > 0) {
             if(wait(NULL) == -1) {
                 printf("pshell : ERR %d : waiting for child Main\n", errno);
+                return -1;
             }
         }
-        fprintf(stderr, "Command Run Successful\n");
+        fprintf(stderr, "\n[+] Command Run Successful\n");
     }
     else if(strcmp(type, "DP") == 0) {
     
@@ -411,7 +426,7 @@ int shell_exec(char** parsed_command, char* type) {
 
         if (mkfifo ("/tmp/fifo1", S_IRUSR| S_IWUSR) < 0) {
             printf("pshell : ERR %d: Error creating FIFO\n", errno);
-            return 1;
+            return -1;
         }
 
         char** first_prog_args = NULL;
@@ -425,11 +440,11 @@ int shell_exec(char** parsed_command, char* type) {
                 if(fd != STDIN_FILENO) {
                     if(dup2(fd, STDIN_FILENO) == -1) {
                         printf("pshell : ERR %d : Error in dup read end in first prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(fd) == -1) {
                         printf("pshell : ERR %d : Error in closing read end in first prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
 
@@ -451,7 +466,7 @@ int shell_exec(char** parsed_command, char* type) {
                 // printf("Executing %s\n", first_program);
                 execvp(first_prog_args[0], args_vec);
                 printf("pshell : ERR %d : error in exec in first program\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -467,20 +482,21 @@ int shell_exec(char** parsed_command, char* type) {
         switch(fork()) {
             case -1:
                 printf("pshell : ERR %d : Error in Fork for DP Command type\n", errno);
+                return -1;
             case 0: {
                 if(close(f_pfd[0]) == -1) {
                     printf("pshell : ERR %d : Error in closing read fd for left prgm\n", errno);
-                    exit(EXIT_FAILURE);
+                    return -1;
                 }
                 
                 if(f_pfd[1] != STDOUT_FILENO) {
                     if(dup2(f_pfd[1], STDOUT_FILENO) == -1) {
                         printf("pshell : ERR %d : Cannot dup write end in left prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(f_pfd[1]) == -1) {
                         printf("pshell : ERR %d : cannot close write end in left prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
                 
@@ -503,7 +519,7 @@ int shell_exec(char** parsed_command, char* type) {
                 // printf("Executing %s\n", left_pipe);
                 execvp(left_pipe_args[0], args_vec);
                 printf("pshell : ERR %d : cannot exec left prgm\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -521,39 +537,39 @@ int shell_exec(char** parsed_command, char* type) {
             case 0: {
                 if(close(f_pfd[1]) == -1) {
                     printf("pshell : ERR %d: cannot close f_pfd write end in tee prgm\n", errno);
-                    exit(EXIT_FAILURE);
+                    return -1;
                 }
                 if(close(s_pfd[0]) == -1) {
                     printf("pshell : ERR %d: cannot close s_pfd write end in tee prgm\n", errno);
-                    exit(EXIT_FAILURE);
+                    return -1;
                 }
                 
                 if(f_pfd[0] != STDIN_FILENO) {
                     if(dup2(f_pfd[0], STDIN_FILENO) == -1) {
                         printf("pshell : ERR %d: Error in f_pfd dup read end in tee prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(f_pfd[0]) == -1) {
                         printf("pshell : ERR %d: Error in f_pfd closing read end in tee prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
                 
                 if(s_pfd[1] != STDOUT_FILENO) {
                     if(dup2(s_pfd[1], STDOUT_FILENO) == -1) {
                         printf("pshell : ERR %d: Error in s_pfd dup read end in tee prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(s_pfd[1]) == -1) {
                         printf("pshell : ERR %d: Error in s_pfd closing read end in tee prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
 
                 // printf("Executing Tee\n");
                 execlp("tee", "tee", "/tmp/fifo1", NULL);
                 printf("pshell : ERR %d : error in exec in tee program\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -582,17 +598,17 @@ int shell_exec(char** parsed_command, char* type) {
             case 0: {
                 if(close(s_pfd[1]) == -1) {
                     printf("pshell : ERR %d: cannot close s_pfd write end in tee prgm\n", errno);
-                    exit(EXIT_FAILURE);
+                    return -1;
                 }
                 
                 if(s_pfd[0] != STDIN_FILENO) {
                     if(dup2(s_pfd[0], STDIN_FILENO) == -1) {
                         printf("pshell : ERR %d : Error in dup read end in second prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(s_pfd[0]) == -1) {
                         printf("pshell : ERR %d : Error in closing read end in second prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
                 
@@ -614,7 +630,7 @@ int shell_exec(char** parsed_command, char* type) {
                 // printf("Executing %s\n", second_program);
                 execvp(second_prog_args[0], args_vec);
                 printf("pshell : ERR %d : error in exec in second program\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -637,7 +653,7 @@ int shell_exec(char** parsed_command, char* type) {
             case 0:
                 execlp("rm", "rm", "-r", "/tmp/fifo1", NULL);
                 printf("pshell : ERR %d : Cannot delete FIFO\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             default:
                 break;
         }
@@ -677,11 +693,11 @@ int shell_exec(char** parsed_command, char* type) {
                 if(fd != STDIN_FILENO) {
                     if(dup2(fd, STDIN_FILENO) == -1) {
                         printf("pshell : ERR %d : Error in dup read end in first prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(fd) == -1) {
                         printf("pshell : ERR %d : Error in closing read end in first prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
 
@@ -703,7 +719,7 @@ int shell_exec(char** parsed_command, char* type) {
                 // printf("Executing %s\n", first_program);
                 execvp(first_prog_args[0], args_vec);
                 printf("pshell : ERR %d : error in exec in first program\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -721,11 +737,11 @@ int shell_exec(char** parsed_command, char* type) {
                 if(fd != STDIN_FILENO) {
                     if(dup2(fd, STDIN_FILENO) == -1) {
                         printf("pshell : ERR %d : Error in dup read end in second prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(fd) == -1) {
                         printf("pshell : ERR %d : Error in closing read end in second prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
 
@@ -747,7 +763,7 @@ int shell_exec(char** parsed_command, char* type) {
                 // printf("Executing %s\n", second_program);
                 execvp(second_prog_args[0], args_vec);
                 printf("pshell : ERR %d : error in exec in second program\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -757,6 +773,7 @@ int shell_exec(char** parsed_command, char* type) {
         int f_pfd[2];
         if(pipe(f_pfd) == -1) {
             printf("pshell : ERR %d: Error in Pipe\n", errno);
+            return -1;
         }
         
         char** left_pipe_args = NULL;
@@ -766,17 +783,17 @@ int shell_exec(char** parsed_command, char* type) {
             case 0: {
                 if(close(f_pfd[0]) == -1) {
                     printf("pshell : ERR %d : Error in closing read fd for left prgm\n", errno);
-                    exit(EXIT_FAILURE);
+                    return -1;
                 }
                 
                 if(f_pfd[1] != STDOUT_FILENO) {
                     if(dup2(f_pfd[1], STDOUT_FILENO) == -1) {
                         printf("pshell : ERR %d : Cannot dup write end in left prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(f_pfd[1]) == -1) {
                         printf("pshell : ERR %d : cannot close write end in left prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
                 
@@ -799,7 +816,7 @@ int shell_exec(char** parsed_command, char* type) {
                 // printf("Executing %s\n", left_pipe);
                 execvp(left_pipe_args[0], args_vec);
                 printf("pshell : ERR %d : cannot exec left prgm\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -817,39 +834,39 @@ int shell_exec(char** parsed_command, char* type) {
             case 0: {
                 if(close(f_pfd[1]) == -1) {
                     printf("pshell : ERR %d: cannot close f_pfd write end in tee prgm\n", errno);
-                    exit(EXIT_FAILURE);
+                    return -1;
                 }
                 if(close(s_pfd[0]) == -1) {
                     printf("pshell : ERR %d: cannot close s_pfd write end in tee prgm\n", errno);
-                    exit(EXIT_FAILURE);
+                    return -1;
                 }
                 
                 if(f_pfd[0] != STDIN_FILENO) {
                     if(dup2(f_pfd[0], STDIN_FILENO) == -1) {
                         printf("pshell : ERR %d: Error in f_pfd dup read end in tee prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(f_pfd[0]) == -1) {
                         printf("pshell : ERR %d: Error in f_pfd closing read end in tee prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
                 
                 if(s_pfd[1] != STDOUT_FILENO) {
                     if(dup2(s_pfd[1], STDOUT_FILENO) == -1) {
                         printf("pshell : ERR %d: Error in s_pfd dup read end in tee prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(s_pfd[1]) == -1) {
                         printf("pshell : ERR %d: Error in s_pfd closing read end in tee prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
 
                 // printf("Executing Tee\n");
                 execlp("tee", "tee", "/tmp/fifo1", "/tmp/fifo2", NULL);
                 printf("pshell : ERR %d : error in exec in tee program\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -881,17 +898,17 @@ int shell_exec(char** parsed_command, char* type) {
             case 0: {
                 if(close(s_pfd[1]) == -1) {
                     printf("pshell : ERR %d: cannot close s_pfd write end in third prgm\n", errno);
-                    exit(EXIT_FAILURE);
+                    return -1;
                 }
                 
                 if(s_pfd[0] != STDIN_FILENO) {
                     if(dup2(s_pfd[0], STDIN_FILENO) == -1) {
                         printf("pshell : ERR %d : Error in dup read end in third prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                     if(close(s_pfd[0]) == -1) {
                         printf("pshell : ERR %d: Error in closing read end in third prgm\n", errno);
-                        exit(EXIT_FAILURE);
+                        return -1;
                     }
                 }
                 int num_third_args_right;
@@ -912,7 +929,7 @@ int shell_exec(char** parsed_command, char* type) {
                 // printf("Executing %s\n", third_program);
                 execvp(third_prog_args[0], args_vec);
                 printf("pshell : ERR %d: error in exec in third program\n", errno);
-                exit(EXIT_FAILURE);
+                return -1;
             }
             default:
                 break;
@@ -961,6 +978,7 @@ int shell_exec(char** parsed_command, char* type) {
     else {
         printf("pshell : ERR %d: Command not recognized\n", errno);
         fflush(stdout);
+        return -1;
     }
     return 1;
 }
