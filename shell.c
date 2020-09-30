@@ -550,7 +550,7 @@ int shell_exec(char** parsed_command, char* type) {
                     }
                 }
 
-                printf("Executing Tee\n");
+                // printf("Executing Tee\n");
                 execlp("tee", "tee", "/tmp/fifo1", NULL);
                 printf("pshell : ERR %d : error in exec in tee program\n", errno);
                 exit(EXIT_FAILURE);
@@ -846,7 +846,7 @@ int shell_exec(char** parsed_command, char* type) {
                     }
                 }
 
-                printf("Executing Tee\n");
+                // printf("Executing Tee\n");
                 execlp("tee", "tee", "/tmp/fifo1", "/tmp/fifo2", NULL);
                 printf("pshell : ERR %d : error in exec in tee program\n", errno);
                 exit(EXIT_FAILURE);
