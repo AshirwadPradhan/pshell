@@ -14,6 +14,14 @@
 #define MAX_ARGS_LEN 128
 #define MAX_PATH_LIST 256
 #define MAX_TOKEN_SIZE 256
+#define MAX_HIST_SIZE 10
+#define MAX_LINE_SIZE 256
+
+struct History {
+    int size;
+    int head;
+    char** hist_elements;
+};
 
 static int num_args_type_np = 0;
 static int num_args_type_dp = 0;
@@ -22,6 +30,7 @@ static int num_args_type_sp = 0;
 
 static char* command_type = NULL;
 static char* PATH = NULL;
+struct History* history;
 
 void main_loop();
 char* read_command();
@@ -31,19 +40,42 @@ void debug(char**, int);
 void string_tokenizer(char*, char**, char*, int*);
 char* trimwhitespace(char*);
 void signal_handler(int);
+void init_hist(int);
+void add_hist(char*);
+void print_hist();
+
+void init_hist(int size) {
+    history = (struct History*) malloc(1*sizeof(struct History));
+    history->size = size;
+    history->hist_elements =(char**) calloc(size, sizeof(char*));
+}
+
+void add_hist(char* input) {
+  if (history->hist_elements[history->head] != NULL) {
+    free(history->hist_elements[history->head]);
+  }
+  history->hist_elements[history->head] = (char*) calloc(MAX_LINE_SIZE, sizeof(char));
+  strcpy(history->hist_elements[history->head], input);
+  history->head = (history->head + 1) % history->size;
+}
+
+void print_hist() {
+  int start = history->head;
+  for (int i = 0; i < history->size; i++) {
+    if (history->hist_elements[start] != NULL) {
+      printf("%s\n", history->hist_elements[start]);
+    }
+    start++;
+    if (start >= history->size) {
+      start = 0;
+    }
+  }
+}
 
 void signal_handler(int sig) {
     if(sig == SIGINT) {
-        char ch;
-        printf("\nDo you really want to exit ? Y or N. \n");
-        scanf("%c", &ch);
-        if(ch == 'Y' || ch == 'y') {
-            exit(EXIT_SUCCESS);
-        }
-        else {
-            printf("\n");
-            return;
-        }
+        printf("Printing last 10 commands: \n");
+        print_hist();
     }
 
     if(sig == SIGQUIT) {
@@ -70,8 +102,9 @@ int main(int argc, char **argv) {
             signal(sig, SIG_IGN);
         }
     }
-
+    init_hist(MAX_HIST_SIZE);
     main_loop();
+    free(history);
     return EXIT_SUCCESS;
 }
 
@@ -87,6 +120,7 @@ void main_loop() {
         if(strlen(command) == 0) {
             continue;
         }
+        add_hist(command);
         parsed_commands = parse_command(command);
         status = shell_exec(parsed_commands, command_type);
     }
