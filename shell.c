@@ -70,7 +70,7 @@ void print_hist() {
   int start = history->head;
   for (int i = 0; i < history->size; i++) {
     if (history->hist_elements[start] != NULL) {
-      printf("%s\t\t\t : Status %d\t\t\t : Errno %d\n", history->hist_elements[start], history->status[start], history->err[start]);
+      printf("%s : Status %d : Errno %d\n", history->hist_elements[start], history->status[start], history->err[start]);
     }
     start++;
     if (start >= history->size) {
@@ -369,6 +369,25 @@ int shell_exec(char** parsed_command, char* type) {
                         if(close(pfd[1]) == -1) {
                             fprintf(stderr,"pshell : ERR %d: Error in pfd closing 2 write end in %s prgm\n", errno, command_vec[i]);
                             return -1;
+                        }
+                        if(strstr(command_vec[i], ">") != NULL) {
+                            printf("[+]Inside commmand with >\n");
+                            char* temp = strtok(command_vec[i], ">");
+                            temp = trimwhitespace(temp);
+                            char* file = strtok(NULL, ">");
+                            file = trimwhitespace(file);
+                            // printf("%s\n", file);
+                            int fd = open(file, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+                            command_vec[i] = temp;
+                            // printf("%s\n", command_vec[i]);
+                            if(dup2(fd, STDOUT_FILENO) == -1) {
+                                fprintf(stderr,"pshell : ERR %d: Error in dup2 for redirect stdout for %s prgm\n", errno, command_vec[i]);
+                                return -1;
+                            }
+                            if(close(fd) == -1) {
+                               fprintf(stderr,"pshell : ERR %d: Error in closing fd for redirect stdout in %s prgm\n", errno, command_vec[i]);
+                                return -1; 
+                            }
                         }
                     }
 
