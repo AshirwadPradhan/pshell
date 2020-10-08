@@ -363,6 +363,25 @@ int shell_exec(char** parsed_command, char* type) {
                             fprintf(stderr,"pshell : ERR %d: Error in pfd closing 2 read end in %s prgm\n", errno, command_vec[i]);
                             return -1;
                         }
+                        if(strstr(command_vec[i], "<") != NULL) {
+                            printf("Inside commmand with <\n");
+                            char* temp = strtok(command_vec[i], "<");
+                            temp = trimwhitespace(temp);
+                            char* file = strtok(NULL, "<");
+                            file = trimwhitespace(file);
+                            // printf("%s\n", file);
+                            int fd = open(file, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+                            command_vec[i] = temp;
+                            // printf("%s\n", command_vec[i]);
+                            if(dup2(fd, STDIN_FILENO) == -1) {
+                                fprintf(stderr,"pshell : ERR %d: Error in dup2 for redirect stdin for %s prgm\n", errno, command_vec[i]);
+                                return -1;
+                            }
+                            if(close(fd) == -1) {
+                               fprintf(stderr,"pshell : ERR %d: Error in closing fd for redirect stdin in %s prgm\n", errno, command_vec[i]);
+                                return -1; 
+                            }
+                        }
                     }
                     
                     if(command_vec[i+1] == NULL) {
